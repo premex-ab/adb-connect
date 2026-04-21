@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required docs exist
+        run: |
+          test -f README.md
+          test -f LICENSE
+          test -f docs/design.md
+
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for Go module
+        id: has-go
+        run: |
+          if [ -f go.mod ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v5
+        if: steps.has-go.outputs.present == 'true'
+        with:
+          go-version: '1.22'
+          check-latest: true
+      - name: go vet
+        if: steps.has-go.outputs.present == 'true'
+        run: go vet ./...
+      - name: go test
+        if: steps.has-go.outputs.present == 'true'
+        run: go test ./...
+      - name: gofmt check
+        if: steps.has-go.outputs.present == 'true'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  gradle:
+    name: gradle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for Android Gradle module
+        id: has-gradle
+        run: |
+          if [ -f android-app/gradlew ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@v4
+        if: steps.has-gradle.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: assembleDebug + testDebugUnitTest
+        if: steps.has-gradle.outputs.present == 'true'
+        working-directory: android-app
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon

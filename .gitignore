@@ -1,0 +1,25 @@
+# Go
+/adb-connect
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Android
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+android-app/.idea/
+android-app/*.iml
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Release artefacts
+*.apk
+!/android-app/app/src/**/*.apk
