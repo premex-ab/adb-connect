@@ -38,6 +38,10 @@ type BusinessError struct {
 
 func (e *BusinessError) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Message) }
 
+// ErrorCode satisfies the interface{ ErrorCode() string } contract used by the
+// IPC layer to surface machine-readable error codes to CLI callers.
+func (e *BusinessError) ErrorCode() string { return e.Code }
+
 // Server is a Tailscale-bound WS listener with per-phone connection bookkeeping.
 type Server struct {
 	cfg     Config
