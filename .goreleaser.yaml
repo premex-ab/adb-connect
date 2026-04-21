@@ -1,0 +1,99 @@
+version: 2
+
+project_name: adb-connect
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: adb-connect
+    main: ./cmd/adb-connect
+    binary: adb-connect
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/premex-ab/adb-connect/internal/version.Version={{.Version}}
+
+archives:
+  - id: default
+    builds: [adb-connect]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev+{{ .ShortCommit }}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^chore(deps):"
+      - "^ci:"
+      - "^docs:"
+      - "^test:"
+  groups:
+    - title: Features
+      regexp: "^feat"
+      order: 0
+    - title: Fixes
+      regexp: "^fix"
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: premex-ab
+    name: adb-connect
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "v{{ .Version }}"
+
+brews:
+  - name: adb-connect
+    repository:
+      owner: premex-ab
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      pull_request:
+        enabled: false
+    homepage: https://github.com/premex-ab/adb-connect
+    description: Connect adb to an Android phone over same-LAN Wi-Fi or Tailscale
+    license: Apache-2.0
+    directory: Formula
+    commit_author:
+      name: premex-release-bot
+      email: bot@premex.se
+    dependencies:
+      - name: android-platform-tools
+        type: optional
+    install: |
+      bin.install "adb-connect"
+    test: |
+      system "#{bin}/adb-connect", "version"
