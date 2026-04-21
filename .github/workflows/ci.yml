@@ -72,6 +72,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Setup Android SDK
+        if: steps.has-gradle.outputs.present == 'true'
+        uses: android-actions/setup-android@v3
       - name: assembleDebug + testDebugUnitTest
         if: steps.has-gradle.outputs.present == 'true'
         working-directory: android-app

@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Premex ADB-gate</string>
+    <string name="toggle_on">ADB gate is ON</string>
+    <string name="toggle_off">ADB gate is OFF</string>
+    <string name="status_waiting">Waiting for server</string>
+    <string name="status_connected">Connected to %1$s</string>
+    <string name="status_unreachable">Server unreachable</string>
+    <string name="by_premex">By Premex</string>
+    <string name="nickname_hint">Pick a short nickname (e.g. "test-pixel")</string>
+    <string name="notification_channel">ADB gate</string>
+    <string name="notification_title">ADB gate active</string>
+    <string name="notification_text">Connected to %1$s — nickname %2$s</string>
+    <string name="scan_qr">Scan enrollment QR from server</string>
+    <string name="continue_button">Continue</string>
+    <string name="scan_button">Scan QR</string>
+    <string name="settings">Settings</string>
+    <string name="repair">Re-scan enrollment QR</string>
+    <string name="change_nickname">Change nickname</string>
+</resources>

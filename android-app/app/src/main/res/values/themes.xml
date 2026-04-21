@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.AdbGate" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/premex_bg</item>
+    </style>
+</resources>
