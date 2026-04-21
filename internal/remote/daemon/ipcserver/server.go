@@ -83,7 +83,11 @@ func (s *Server) handle(c net.Conn) {
 	}
 	resp, err := h(req)
 	if err != nil {
-		writeResp(c, map[string]any{"ok": false, "error": err.Error()})
+		errResp := map[string]any{"ok": false, "error": err.Error()}
+		if coder, ok := err.(interface{ ErrorCode() string }); ok {
+			errResp["code"] = coder.ErrorCode()
+		}
+		writeResp(c, errResp)
 		return
 	}
 	if resp == nil {
