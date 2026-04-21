@@ -79,10 +79,15 @@ brews:
     repository:
       owner: premex-ab
       name: homebrew-tap
-      branch: main
+      # Target a release-specific branch; Goreleaser opens a PR into main
+      # because the tap's main branch has an org-wide required CI check
+      # that blocks direct pushes from CI identities.
+      branch: "goreleaser-adb-connect-{{ .Version }}"
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
       pull_request:
-        enabled: false
+        enabled: true
+        base:
+          branch: main
     homepage: https://github.com/premex-ab/adb-connect
     description: Connect adb to an Android phone over same-LAN Wi-Fi or Tailscale
     license: Apache-2.0
