@@ -2,7 +2,10 @@ module github.com/premex-ab/adb-connect
 
 go 1.26.1
 
-require modernc.org/sqlite v1.49.1
+require (
+	modernc.org/sqlite v1.49.1
+	nhooyr.io/websocket v1.8.17
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
