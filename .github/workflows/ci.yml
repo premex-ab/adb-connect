@@ -13,7 +13,7 @@ jobs:
     name: docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check required docs exist
         run: |
           test -f README.md
@@ -24,7 +24,7 @@ jobs:
     name: go
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check for Go module
         id: has-go
         run: |
@@ -58,7 +58,7 @@ jobs:
     name: gradle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check for Android Gradle module
         id: has-gradle
         run: |
