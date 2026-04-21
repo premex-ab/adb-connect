@@ -17,9 +17,13 @@ type InstallOpts struct {
 	DryRun     bool   // skip the actual load/enable step
 }
 
-func macPlistPath() string  { return filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", label+".plist") }
-func linuxUnitPath() string { return filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user", "adb-connect-server.service") }
-func macLogsDir() string    { return filepath.Join(os.Getenv("HOME"), "Library", "Logs", "adb-connect") }
+func macPlistPath() string {
+	return filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", label+".plist")
+}
+func linuxUnitPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user", "adb-connect-server.service")
+}
+func macLogsDir() string { return filepath.Join(os.Getenv("HOME"), "Library", "Logs", "adb-connect") }
 
 // Install writes the service definition file and, unless DryRun is set, loads/enables the service.
 func Install(opts InstallOpts) error {
