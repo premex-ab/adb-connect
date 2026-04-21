@@ -42,6 +42,18 @@ Copy the contents of `release.keystore.b64` into the `ANDROID_KEYSTORE_B64` secr
 
 ## Homebrew tap
 
-The tap repo `premex-ab/homebrew-tap` must exist before the first release.
-Create it empty on GitHub; Goreleaser will push the first formula file into it.
-The Premex Bot App must be installed on that repo with `contents: write` permission.
+The tap repo [`premex-ab/homebrew-tap`](https://github.com/premex-ab/homebrew-tap)
+has been bootstrapped with its own `CI` workflow and an empty `Formula/` directory.
+Goreleaser does not push directly to `main` because the tap's `main` is protected
+by the organisation-wide required-`CI`-check rule; instead it:
+
+1. Pushes the new formula to a release-specific branch
+   (`goreleaser-adb-connect-<version>`).
+2. Opens a pull request from that branch into `main`.
+3. The tap's `CI` workflow runs (Ruby syntax validation of the formula).
+4. When `CI` is green, the PR is merged (manually by a maintainer, or via GitHub
+   auto-merge if enabled at repo level).
+
+**Prerequisite:** the Premex Bot App must be installed on `premex-ab/homebrew-tap`
+with `contents: write` and `pull_requests: write`. Install the App from its
+settings page under "Install App" and grant access to both repos.
