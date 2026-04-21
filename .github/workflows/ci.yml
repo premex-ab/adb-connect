@@ -79,10 +79,11 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
 
-  # Single aggregation check — branch protection only needs to require `main`,
-  # which transitively requires every other job through the `needs` list.
-  main:
-    name: main
+  # Single aggregation check the org-wide ruleset requires as "CI". Transitively
+  # requires every other job through the `needs` list, so branch protection only
+  # has to list `CI` as required.
+  CI:
+    name: CI
     runs-on: ubuntu-latest
     needs: [docs, go, gradle]
     if: always()
