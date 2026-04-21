@@ -14,14 +14,32 @@ android {
         minSdk = 30
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = (System.getenv("VERSION") ?: "0.0.0-dev").removePrefix("v")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        create("release") {
+            val keystoreB64 = System.getenv("ANDROID_KEYSTORE_B64")
+            if (!keystoreB64.isNullOrBlank()) {
+                val keystoreBytes = java.util.Base64.getDecoder().decode(keystoreB64)
+                val keystoreFile = layout.buildDirectory.file("keystore/release.keystore").get().asFile
+                keystoreFile.parentFile.mkdirs()
+                keystoreFile.writeBytes(keystoreBytes)
+                storeFile = keystoreFile
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: ""
+            }
+        }
     }
     buildTypes {
         getByName("debug") { isMinifyEnabled = false }
         getByName("release") {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (!System.getenv("ANDROID_KEYSTORE_B64").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
