@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,7 +23,7 @@ android {
         create("release") {
             val keystoreB64 = System.getenv("ANDROID_KEYSTORE_B64")
             if (!keystoreB64.isNullOrBlank()) {
-                val keystoreBytes = java.util.Base64.getDecoder().decode(keystoreB64)
+                val keystoreBytes = Base64.getDecoder().decode(keystoreB64)
                 val keystoreFile = layout.buildDirectory.file("keystore/release.keystore").get().asFile
                 keystoreFile.parentFile.mkdirs()
                 keystoreFile.writeBytes(keystoreBytes)
