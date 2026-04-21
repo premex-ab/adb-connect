@@ -78,3 +78,24 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
+
+  # Single aggregation check — branch protection only needs to require `main`,
+  # which transitively requires every other job through the `needs` list.
+  main:
+    name: main
+    runs-on: ubuntu-latest
+    needs: [docs, go, gradle]
+    if: always()
+    steps:
+      - name: Confirm all required checks succeeded
+        run: |
+          if [ "${{ needs.docs.result }}" != "success" ] \
+             || [ "${{ needs.go.result }}" != "success" ] \
+             || [ "${{ needs.gradle.result }}" != "success" ]; then
+            echo "One or more required checks failed."
+            echo "docs: ${{ needs.docs.result }}"
+            echo "go:   ${{ needs.go.result }}"
+            echo "gradle: ${{ needs.gradle.result }}"
+            exit 1
+          fi
+          echo "All required checks passed."
