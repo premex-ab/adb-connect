@@ -83,10 +83,9 @@ jobs:
           cd stage
           sha=$(sha256sum "$apk" | awk '{print $1}')
           printf '%s  %s\n' "$sha" "$apk" > "${apk}.sha256"
-          printf '{"apk":{"filename":"%s","sha256":"%s"}}\n' "$apk" "$sha" > manifest.json
           echo "apk=$apk" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK + manifest to Release
+      - name: Upload APK + checksum to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
@@ -96,5 +95,4 @@ jobs:
           gh release upload "$TAG" \
             "$APK" \
             "${APK}.sha256" \
-            manifest.json \
             --repo "${{ github.repository }}" --clobber

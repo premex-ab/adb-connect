@@ -3,7 +3,7 @@
 [![CI](https://github.com/premex-ab/adb-connect/actions/workflows/ci.yml/badge.svg)](https://github.com/premex-ab/adb-connect/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/premex-ab/adb-connect)](https://github.com/premex-ab/adb-connect/releases)
 
-Connect `adb` to an Android phone from anywhere — same Wi-Fi, or across networks via [Tailscale](https://tailscale.com/). One command to pair, one command to connect, every time.
+One-command wireless `adb` on the same Wi-Fi — no cables, no Android Studio required.
 
 ## Install
 
@@ -13,22 +13,21 @@ Connect `adb` to an Android phone from anywhere — same Wi-Fi, or across networ
 
 ## Usage
 
-See the [quickstart](docs/quickstart.md) for a 60-second walkthrough.
+    adb-connect install-app     # sideload the signed Premex ADB-gate companion app (once per phone)
+    adb-connect pair            # QR-pair the phone and add it to adb devices
+    adb-connect version
 
-    adb-connect pair                          # same-Wi-Fi QR flow
-    adb-connect remote setup                  # bootstrap Tailscale + daemon + companion app
-    adb-connect remote connect [nickname]     # connect to a remote phone
-    adb-connect remote status                 # list enrolled phones
-    adb-connect remote uninstall              # tear down
-    adb-connect daemon                        # run daemon in foreground (used by service unit)
+See the [quickstart](docs/quickstart.md) for a step-by-step walkthrough.
 
-## Why this exists
+## How it works
 
-Android Studio's "Pair devices using Wi-Fi" is great — when you're on the phone's LAN. This tool makes the same flow work when you're not: the developer machine and the phone join a Tailscale mesh, a privileged Android companion app programmatically toggles wireless ADB, and the CLI's daemon brokers the connection over the mesh.
+`adb-connect pair` drives the same mDNS-based QR pairing flow that Android Studio uses — it renders a QR code, waits for the phone to scan it via the Wireless Debugging panel, then runs `adb pair` and `adb connect` automatically.
 
-## Architecture and design
+The **Premex ADB-gate** companion Android app (sideloaded by `install-app`) provides a one-tap toggle to enable ADB over Wi-Fi without touching Developer options every time. It holds the `WRITE_SECURE_SETTINGS` permission (granted at install time) so it can toggle wireless debugging programmatically.
 
-See [`docs/design.md`](docs/design.md) and the wire-protocol spec at [`docs/wire-protocol.md`](docs/wire-protocol.md).
+## Architecture
+
+See [`docs/design.md`](docs/design.md).
 
 ## License
 
