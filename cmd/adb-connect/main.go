@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -35,6 +36,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+		// Root has SilenceErrors=true so cobra doesn't print; print here so the user
+		// sees why we exited instead of a mysteriously vanishing prompt.
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
