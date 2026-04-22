@@ -11,22 +11,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	flagVerbose bool
-)
-
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "adb-connect",
-		Short:         "Connect adb to an Android phone — same-LAN or over Tailscale",
+		Short:         "Connect adb to an Android phone over the same Wi-Fi network",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "verbose logging")
 	root.AddCommand(
 		newPairCmd(),
-		newRemoteCmd(),
-		newDaemonCmd(),
+		newInstallAppCmd(),
 		newVersionCmd(),
 	)
 	return root

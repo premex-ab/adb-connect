@@ -6,33 +6,28 @@
     # or
     curl -fsSL https://premex-ab.github.io/adb-connect/install.sh | sh
 
-## Use case 1 — phone on the same Wi-Fi
+## Setup (one time per phone)
 
-On your Android phone: **Settings → Developer options → Wireless debugging** — leave the panel open.
+1. Plug the phone in via USB, or enable **Wireless debugging** once from Developer options and run `adb-connect pair`.
 
-On your laptop:
+2. Sideload the signed Premex ADB-gate companion app:
+
+       adb-connect install-app
+
+   This downloads the signed APK from GitHub Releases, verifies its SHA-256, installs it, and grants the `WRITE_SECURE_SETTINGS` permission.
+
+3. Open **Premex ADB-gate** on the phone and flip the master toggle **ON**.
+
+## Everyday use
 
     adb-connect pair
 
-A browser tab opens with a QR. Scan it from the **Pair device with QR code** option on the phone. Within seconds, the phone appears in `adb devices`.
+A QR code opens in your browser. On the phone: **Wireless debugging → Pair device with QR code**, then scan. Within seconds the phone appears in `adb devices`.
 
-## Use case 2 — phone on a different network (over Tailscale)
+The Premex ADB-gate toggle must be ON for wireless ADB to be active. The app shows the current ADB endpoint (IP:port) when it is.
 
-One-time setup (both the laptop and phone must already be on the same tailnet):
+## Commands
 
-    adb-connect remote setup
-
-Follow the prompts: paste a Tailscale auth key, pick a nickname for the phone, scan the enrollment QR from the Premex ADB-gate app on the phone, flip the app's toggle to ON.
-
-Everyday use:
-
-    adb-connect remote connect              # auto-picks if one phone
-    adb-connect remote connect my-pixel     # by nickname
-    adb-connect remote status               # list enrolled phones
-
-The phone is reachable via its Tailscale IP — no same-LAN requirement.
-
-## Uninstall
-
-    adb-connect remote uninstall           # keeps config
-    adb-connect remote uninstall --wipe-config   # full teardown
+    adb-connect pair            # QR pair + connect (same-LAN)
+    adb-connect install-app     # sideload the companion app (once per phone / release)
+    adb-connect version         # print CLI version

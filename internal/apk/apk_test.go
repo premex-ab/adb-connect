@@ -14,16 +14,17 @@ import (
 	"github.com/premex-ab/adb-connect/internal/apk"
 )
 
-// fakeRelease serves a manifest and APK that match. Returns a base URL to rewrite apk.releaseBase.
+// fakeRelease serves a .sha256 file and APK that match. Returns a base URL for apk.SetReleaseBase.
 func fakeRelease(t *testing.T, apkBytes []byte) string {
 	t.Helper()
 	sum := sha256.Sum256(apkBytes)
 	sumHex := hex.EncodeToString(sum[:])
-	manifest := fmt.Sprintf(`{"apk":{"filename":"adb-gate-0.1.0.apk","sha256":"%s"}}`, sumHex)
+	// sha256sum-style: "<hex>  <filename>\n"
+	checksumLine := fmt.Sprintf("%s  adb-gate-0.1.0.apk\n", sumHex)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v0.1.0/manifest.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(manifest))
+	mux.HandleFunc("/v0.1.0/adb-gate-0.1.0.apk.sha256", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(checksumLine))
 	})
 	mux.HandleFunc("/v0.1.0/adb-gate-0.1.0.apk", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -37,7 +38,6 @@ func fakeRelease(t *testing.T, apkBytes []byte) string {
 func TestDownload_Success(t *testing.T) {
 	apkBytes := []byte("fake APK content " + strings.Repeat("x", 1000))
 	base := fakeRelease(t, apkBytes)
-	// patch the package-level base at runtime using apk.SetReleaseBase (to be added in apk.go)
 	oldBase := apk.SetReleaseBase(base)
 	defer apk.SetReleaseBase(oldBase)
 
@@ -54,11 +54,11 @@ func TestDownload_Success(t *testing.T) {
 func TestDownload_SHAMismatch(t *testing.T) {
 	base := func() string {
 		mux := http.NewServeMux()
-		// manifest says one SHA, apk body has different SHA
-		mux.HandleFunc("/v0.1.0/manifest.json", func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"apk":{"filename":"x.apk","sha256":"deadbeef"}}`))
+		// checksum file says one SHA, apk body has different SHA
+		mux.HandleFunc("/v0.1.0/adb-gate-0.1.0.apk.sha256", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("deadbeef  adb-gate-0.1.0.apk\n"))
 		})
-		mux.HandleFunc("/v0.1.0/x.apk", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/v0.1.0/adb-gate-0.1.0.apk", func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("some bytes"))
 		})
 		srv := httptest.NewServer(mux)
@@ -76,7 +76,7 @@ func TestDownload_SHAMismatch(t *testing.T) {
 	}
 }
 
-func TestDownload_ManifestMissing(t *testing.T) {
+func TestDownload_ChecksumMissing(t *testing.T) {
 	mux := http.NewServeMux() // no handlers -> 404
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -84,7 +84,7 @@ func TestDownload_ManifestMissing(t *testing.T) {
 	defer apk.SetReleaseBase(oldBase)
 	dest := filepath.Join(t.TempDir(), "out.apk")
 	if err := apk.Download("0.1.0", dest); err == nil {
-		t.Fatal("expected error for missing manifest")
+		t.Fatal("expected error for missing checksum file")
 	}
 }
 
