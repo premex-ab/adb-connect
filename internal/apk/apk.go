@@ -1,6 +1,6 @@
 // Package apk downloads the signed Premex ADB-gate APK from the GitHub release
-// matching the CLI version and verifies its SHA-256 against a value fetched
-// from the same release's manifest.json.
+// matching the CLI version and verifies its SHA-256 against the published
+// <apk-filename>.sha256 file uploaded alongside it.
 //
 // SetReleaseBase is a test-only hook that redirects downloads to a fake server.
 // Production code should never call it.
@@ -9,12 +9,12 @@ package apk
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -28,45 +28,54 @@ func SetReleaseBase(newBase string) string {
 	return prev
 }
 
-// Download writes the signed APK for version v to destPath and verifies the SHA against the release manifest.
+// Download writes the signed APK for version v to destPath and verifies the SHA
+// against the <apk-filename>.sha256 file published alongside the release asset.
 func Download(version, destPath string) error {
 	if version == "" || version == "dev" {
 		return errors.New("apk: no release version — cannot download pre-built APK for dev builds")
 	}
-	manifestURL := fmt.Sprintf("%s/v%s/manifest.json", releaseBase, version)
-	mresp, err := httpGet(manifestURL)
+	apkFile := fmt.Sprintf("adb-gate-%s.apk", version)
+	baseURL := fmt.Sprintf("%s/v%s", releaseBase, version)
+
+	// Download the checksum file first (small, fast).
+	checksumURL := baseURL + "/" + apkFile + ".sha256"
+	sumResp, err := httpGet(checksumURL)
 	if err != nil {
-		return fmt.Errorf("fetch manifest: %w", err)
+		return fmt.Errorf("fetch checksum: %w", err)
 	}
-	defer mresp.Body.Close()
-	var mf struct {
-		APK struct {
-			Filename string `json:"filename"`
-			SHA256   string `json:"sha256"`
-		} `json:"apk"`
+	defer sumResp.Body.Close()
+	sumBytes, err := io.ReadAll(sumResp.Body)
+	if err != nil {
+		return fmt.Errorf("read checksum: %w", err)
 	}
-	if err := json.NewDecoder(mresp.Body).Decode(&mf); err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+	fields := strings.Fields(string(sumBytes))
+	if len(fields) < 1 {
+		return fmt.Errorf("apk: empty checksum file at %s", checksumURL)
 	}
-	apkURL := fmt.Sprintf("%s/v%s/%s", releaseBase, version, mf.APK.Filename)
+	wantSHA := fields[0]
+
+	// Download the APK.
+	apkURL := baseURL + "/" + apkFile
 	aresp, err := httpGet(apkURL)
 	if err != nil {
 		return fmt.Errorf("fetch apk: %w", err)
 	}
 	defer aresp.Body.Close()
+
 	f, err := os.Create(destPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(f, h), aresp.Body); err != nil {
 		return err
 	}
 	got := hex.EncodeToString(h.Sum(nil))
-	if got != mf.APK.SHA256 {
+	if got != wantSHA {
 		_ = os.Remove(destPath)
-		return fmt.Errorf("apk: sha256 mismatch (got %s, want %s)", got, mf.APK.SHA256)
+		return fmt.Errorf("apk: sha256 mismatch (got %s, want %s)", got, wantSHA)
 	}
 	return nil
 }
