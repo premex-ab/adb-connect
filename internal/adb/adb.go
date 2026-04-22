@@ -45,6 +45,12 @@ func Connect(ctx context.Context, host string, port int) (Result, error) {
 	return run(ctx, "connect", hostPort(host, port)), nil
 }
 
+// Disconnect tears down an adb wifi-debug connection at host:port. Called by
+// the watcher to prune stale offline entries after the phone rotates its port.
+func Disconnect(ctx context.Context, host string, port int) (Result, error) {
+	return run(ctx, "disconnect", hostPort(host, port)), nil
+}
+
 func Install(ctx context.Context, apkPath string) (Result, error) {
 	return run(ctx, "install", "-r", apkPath), nil
 }

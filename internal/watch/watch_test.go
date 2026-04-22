@@ -3,6 +3,8 @@ package watch
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -226,6 +228,89 @@ func TestRun_SkipsFailedConnect(t *testing.T) {
 	if len(connected) != 0 {
 		t.Errorf("connected map should be empty after failed connect, got %v", connected)
 	}
+}
+
+// TestHandleEntry_PortRotationDisconnectsStaleAndReconnects verifies that when
+// the same instance re-appears with a different port (Android rotates on every
+// toggle cycle), the watcher disconnects the old endpoint and connects to the new.
+func TestHandleEntry_PortRotationDisconnectsStaleAndReconnects(t *testing.T) {
+	t.Parallel()
+
+	var connectCalls []string
+	var disconnectCalls []string
+	cfg := Config{
+		adbConnectFn: func(_ context.Context, host string, port int) error {
+			connectCalls = append(connectCalls, fmtHP(host, port))
+			return nil
+		},
+		adbDisconnectFn: func(_ context.Context, host string, port int) error {
+			disconnectCalls = append(disconnectCalls, fmtHP(host, port))
+			return nil
+		},
+	}
+	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	connected := map[string]string{}
+
+	handleEntry(context.Background(), cfg, connected, makeEntry("adb-PHONE1-xx", "10.0.0.5", 11111))
+	handleEntry(context.Background(), cfg, connected, makeEntry("adb-PHONE1-xx", "10.0.0.5", 22222))
+
+	if got := connectCalls; len(got) != 2 || got[0] != "10.0.0.5:11111" || got[1] != "10.0.0.5:22222" {
+		t.Errorf("connect calls = %v, want [10.0.0.5:11111 10.0.0.5:22222]", got)
+	}
+	if got := disconnectCalls; len(got) != 1 || got[0] != "10.0.0.5:11111" {
+		t.Errorf("disconnect calls = %v, want [10.0.0.5:11111]", got)
+	}
+	const instance = "adb-PHONE1-xx._adb-tls-connect._tcp.local."
+	if connected[instance] != "10.0.0.5:22222" {
+		t.Errorf("connected map = %v, want {%s: 10.0.0.5:22222}", connected, instance)
+	}
+}
+
+// TestReconcile_DisconnectsOfflineEndpointsAndDropsFromMap verifies that
+// reconcile (a) runs adb disconnect on any wifi-debug serials in `offline` state
+// and (b) drops those serials from the connected map so the next mDNS
+// announcement triggers a fresh connect.
+func TestReconcile_DisconnectsOfflineEndpointsAndDropsFromMap(t *testing.T) {
+	t.Parallel()
+
+	var disconnectCalls []string
+	cfg := Config{
+		adbConnectFn: func(_ context.Context, host string, port int) error { return nil },
+		adbDisconnectFn: func(_ context.Context, host string, port int) error {
+			disconnectCalls = append(disconnectCalls, fmtHP(host, port))
+			return nil
+		},
+		adbDevicesFn: func(_ context.Context) ([]adbDevice, error) {
+			return []adbDevice{
+				{Serial: "10.0.0.5:11111", State: "offline"}, // stale
+				{Serial: "USB-SERIAL-123", State: "device"},  // untouched
+			}, nil
+		},
+	}
+	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	connected := map[string]string{"adb-PHONE1-xx": "10.0.0.5:11111"}
+
+	reconcile(context.Background(), cfg, connected)
+
+	if got := disconnectCalls; len(got) != 1 || got[0] != "10.0.0.5:11111" {
+		t.Errorf("disconnect calls = %v, want [10.0.0.5:11111]", got)
+	}
+	if _, ok := connected["adb-PHONE1-xx"]; ok {
+		t.Errorf("connected map should have dropped stale entry, got %v", connected)
+	}
+}
+
+func fmtHP(host string, port int) string { return host + ":" + itoa(port) }
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	b := []byte{}
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
 }
 
 // TestRun_StopsOnContextCancel verifies Run returns nil within 1 second of

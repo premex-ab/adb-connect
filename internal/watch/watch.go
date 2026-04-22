@@ -28,9 +28,10 @@ type Config struct {
 	Logger *slog.Logger
 
 	// Test-only seams — leave nil in production.
-	browse       func(ctx context.Context, entries chan<- *zeroconf.ServiceEntry) error
-	adbConnectFn func(ctx context.Context, host string, port int) error
-	adbDevicesFn func(ctx context.Context) ([]adbDevice, error)
+	browse          func(ctx context.Context, entries chan<- *zeroconf.ServiceEntry) error
+	adbConnectFn    func(ctx context.Context, host string, port int) error
+	adbDisconnectFn func(ctx context.Context, host string, port int) error
+	adbDevicesFn    func(ctx context.Context) ([]adbDevice, error)
 }
 
 // Run starts the mDNS watch loop. It blocks until ctx is cancelled, then
@@ -44,6 +45,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.adbConnectFn == nil {
 		cfg.adbConnectFn = defaultAdbConnect
+	}
+	if cfg.adbDisconnectFn == nil {
+		cfg.adbDisconnectFn = defaultAdbDisconnect
 	}
 	if cfg.adbDevicesFn == nil {
 		cfg.adbDevicesFn = defaultAdbDevices
@@ -106,10 +110,23 @@ func handleEntry(ctx context.Context, cfg Config, connected map[string]string, e
 	port := e.Port
 	hostPort := fmt.Sprintf("%s:%d", host, port)
 
-	// Dedup: if already in the connected map, skip.
-	if _, ok := connected[e.ServiceInstanceName()]; ok {
-		cfg.Logger.Debug("already connected, skipping", "instance", e.ServiceInstanceName(), "addr", hostPort)
-		return
+	// Dedup: if already connected at the same host:port, skip. If the instance's
+	// port changed (Android rotates the wireless-debugging port on every toggle
+	// cycle), disconnect the stale endpoint so `adb devices` doesn't accumulate
+	// offline entries, then fall through to the fresh connect.
+	if prev, ok := connected[e.ServiceInstanceName()]; ok {
+		if prev == hostPort {
+			cfg.Logger.Debug("already connected, skipping", "instance", e.ServiceInstanceName(), "addr", hostPort)
+			return
+		}
+		cfg.Logger.Info("mDNS port rotated, disconnecting stale endpoint",
+			"instance", e.ServiceInstanceName(), "old", prev, "new", hostPort)
+		if prevHost, prevPort, ok := splitHostPort(prev); ok {
+			if err := cfg.adbDisconnectFn(ctx, prevHost, prevPort); err != nil {
+				cfg.Logger.Debug("adb disconnect of stale endpoint failed (ignored)", "addr", prev, "err", err)
+			}
+		}
+		delete(connected, e.ServiceInstanceName())
 	}
 
 	cfg.Logger.Info("new mDNS device, attempting adb connect", "instance", e.ServiceInstanceName(), "addr", hostPort)
@@ -124,13 +141,14 @@ func handleEntry(ctx context.Context, cfg Config, connected map[string]string, e
 }
 
 // reconcile drops entries from the connected map whose host:port is no longer
-// shown in `adb devices`. This allows the next mDNS announcement to re-trigger.
+// an active ("device" state) entry in `adb devices`. "offline" entries don't
+// count — those are stale endpoints left behind after the phone rotated ports.
+// We also run `adb disconnect` on any offline entries to keep the device list
+// tidy. Dropping from the map lets the next mDNS announcement re-trigger a
+// fresh connect.
 func reconcile(ctx context.Context, cfg Config, connected map[string]string) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
-	}
-	if len(connected) == 0 {
-		return
 	}
 	devices, err := cfg.adbDevicesFn(ctx)
 	if err != nil {
@@ -138,17 +156,65 @@ func reconcile(ctx context.Context, cfg Config, connected map[string]string) {
 		return
 	}
 
+	// Sweep: clean up any offline wifi-debug entries regardless of what's in our map.
+	for _, d := range devices {
+		if d.State != "offline" {
+			continue
+		}
+		// Only disconnect LAN-style serials (contain ":"); leave USB serials alone.
+		host, port, ok := splitHostPort(d.Serial)
+		if !ok {
+			continue
+		}
+		cfg.Logger.Info("disconnecting stale offline endpoint", "addr", d.Serial)
+		if err := cfg.adbDisconnectFn(ctx, host, port); err != nil {
+			cfg.Logger.Debug("adb disconnect failed (ignored)", "addr", d.Serial, "err", err)
+		}
+	}
+
+	if len(connected) == 0 {
+		return
+	}
+
+	// Only entries currently in state "device" count as active.
 	active := make(map[string]bool, len(devices))
 	for _, d := range devices {
-		active[d.Serial] = true
+		if d.State == "device" {
+			active[d.Serial] = true
+		}
 	}
 
 	for instance, hostPort := range connected {
 		if !active[hostPort] {
-			cfg.Logger.Info("device no longer in adb devices, dropping from connected map", "instance", instance, "addr", hostPort)
+			cfg.Logger.Info("device no longer active in adb devices, dropping from connected map", "instance", instance, "addr", hostPort)
 			delete(connected, instance)
 		}
 	}
+}
+
+// splitHostPort parses a "host:port" string (as `adb devices` prints wifi-debug
+// serials). Returns ok=false for serials without a ":" (USB serials, emulator IDs).
+func splitHostPort(s string) (host string, port int, ok bool) {
+	// Find last ":" to allow IPv6 bracketed forms.
+	idx := -1
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == ':' {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 || idx == len(s)-1 {
+		return "", 0, false
+	}
+	p := 0
+	for i := idx + 1; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return "", 0, false
+		}
+		p = p*10 + int(c-'0')
+	}
+	return s[:idx], p, true
 }
 
 // defaultBrowse uses the real zeroconf library.
@@ -168,6 +234,19 @@ func defaultAdbConnect(ctx context.Context, host string, port int) error {
 	}
 	if !r.OK {
 		return fmt.Errorf("adb connect: %s", r.Stderr)
+	}
+	return nil
+}
+
+// defaultAdbDisconnect runs `adb disconnect <host>:<port>`. Errors are best-effort;
+// `adb disconnect` of a serial that isn't connected returns non-zero, which is fine.
+func defaultAdbDisconnect(ctx context.Context, host string, port int) error {
+	r, err := adb.Disconnect(ctx, host, port)
+	if err != nil {
+		return err
+	}
+	if !r.OK {
+		return fmt.Errorf("adb disconnect: %s", r.Stderr)
 	}
 	return nil
 }
