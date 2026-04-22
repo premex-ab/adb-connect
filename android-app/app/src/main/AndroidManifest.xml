@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Required by NsdManager even for LAN-only mDNS lookups (used by PairingDiscovery). -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".AdbGateApplication"
