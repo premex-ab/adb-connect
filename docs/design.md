@@ -1,7 +1,7 @@
-# adb-connect — design (v0.2.0)
+# adb-connect — design (v0.3.0)
 
 **Status:** Implemented.
-**Date:** 2026-04-21
+**Date:** 2026-04-21 (v0.2.0) / 2026-04-22 (v0.3.0 addendum)
 
 ## Summary
 
@@ -40,6 +40,9 @@ Written in Go. No CGO — cross-compiled static binaries for macOS arm64/amd64, 
 |---|---|
 | `pair` | Renders a QR code; user scans from Android's Wireless Debugging panel. Runs `adb pair` + `adb connect` to complete the pairing. |
 | `install-app` | Downloads the signed APK from GitHub Releases, verifies SHA-256 against `<apk>.sha256`, then `adb install -r` + `pm grant WRITE_SECURE_SETTINGS`. |
+| `watch` | Browses `_adb-tls-connect._tcp` on the LAN and auto-runs `adb connect` for each new paired phone. Blocks until SIGINT/SIGTERM. |
+| `service install` | Installs `watch` as a launchd user agent (macOS) or systemd-user unit (Linux) so it starts automatically at login. |
+| `service uninstall` | Stops and removes the installed service. |
 | `version` | Prints the CLI version. |
 
 ### Android app (Premex ADB-gate)
@@ -53,21 +56,37 @@ A minimal Kotlin/Compose app with a single screen:
 
 Requires the `WRITE_SECURE_SETTINGS` permission, granted at install time by `adb-connect install-app`.
 
+## v0.3.0 — mDNS auto-connect watcher
+
+After a phone is paired once with `adb-connect pair`, toggling the Premex ADB-gate app ON causes the phone to advertise `_adb-tls-connect._tcp` on the LAN. The laptop-side `watch` command browses that service, calls `adb connect <ip>:<port>` for each new advertisement, and the phone appears in `adb devices` within a few seconds — no manual command needed.
+
+The recommended setup is:
+
+    adb-connect service install
+
+This registers `adb-connect watch` as a launchd user agent (macOS) or systemd-user unit (Linux) that starts at login and runs continuously in the background. The launchd plist sets an explicit `PATH` covering Homebrew prefixes (`/opt/homebrew/bin`, `/usr/local/bin`, …) so that `adb` is found even though launchd's own default PATH is minimal.
+
+The watcher deduplicates by mDNS instance name and reconciles against `adb devices` every 15 seconds, dropping stale entries so they reconnect on the next announcement.
+
 ## Repo layout
 
 ```
 premex-ab/adb-connect/
 ├── cmd/adb-connect/
-│   ├── main.go           # cobra root (pair, install-app, version)
+│   ├── main.go           # cobra root (pair, install-app, watch, service, version)
 │   ├── pair.go
 │   ├── install_app.go
+│   ├── watch.go          # `watch` subcommand
+│   ├── service.go        # `service install/uninstall` subcommands
 │   └── version.go
 ├── internal/
 │   ├── adb/              # adb CLI wrapper (Pair, Connect, Install, Devices, GrantWriteSecureSettings)
 │   ├── apk/              # APK download + SHA-256 verify (against <apk>.sha256)
 │   ├── pair/             # same-LAN QR pair flow
+│   ├── service/          # launchd plist + systemd-user unit installer
 │   ├── testutil/
-│   └── version/
+│   ├── version/
+│   └── watch/            # mDNS browse loop + adb-connect logic
 ├── android-app/          # Kotlin + Compose source for the companion app
 ├── docs/
 │   ├── design.md         # this document

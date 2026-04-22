@@ -21,6 +21,8 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newPairCmd(),
 		newInstallAppCmd(),
+		newWatchCmd(),
+		newServiceCmd(),
 		newVersionCmd(),
 	)
 	return root
