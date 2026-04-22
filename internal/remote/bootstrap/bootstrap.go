@@ -29,6 +29,7 @@ import (
 	"github.com/premex-ab/adb-connect/internal/remote/daemon/paths"
 	"github.com/premex-ab/adb-connect/internal/remote/daemon/statestore"
 	"github.com/premex-ab/adb-connect/internal/remote/service"
+	"github.com/premex-ab/adb-connect/internal/tailscale"
 )
 
 const packageID = "se.premex.adbgate"
@@ -60,6 +61,8 @@ type RemoteSetupOpts struct {
 	// Test-only seams — nil uses production implementations; all external side-effects go through these.
 	ensureTSInstalled func(ctx context.Context, platform string) error
 	ensureTSUp        func(ctx context.Context, key string) error
+	tsStatusFn        func(ctx context.Context) *tailscale.Status
+	tsMagicDNSFn      func(ctx context.Context) string
 	adbDevicesFn      func(ctx context.Context) ([]adbDevice, error)
 	adbInstallFn      func(ctx context.Context, apkPath string) error
 	adbGrantFn        func(ctx context.Context, pkg string) error
@@ -91,6 +94,12 @@ func RemoteSetup(ctx context.Context, opts RemoteSetupOpts) error {
 	if opts.ensureTSUp == nil {
 		opts.ensureTSUp = defaultEnsureTSUp
 	}
+	if opts.tsStatusFn == nil {
+		opts.tsStatusFn = tailscale.GetStatus
+	}
+	if opts.tsMagicDNSFn == nil {
+		opts.tsMagicDNSFn = tailscale.MagicDNSName
+	}
 	if opts.adbDevicesFn == nil {
 		opts.adbDevicesFn = defaultADBDevices
 	}
@@ -120,9 +129,17 @@ func RemoteSetup(ctx context.Context, opts RemoteSetupOpts) error {
 
 	// [2/6] Tailscale up?
 	fmt.Fprintln(out, "[2/6] Bringing Tailscale up…")
-	authKey, err := promptAuthKey(opts, inputReader)
-	if err != nil {
-		return err
+	var authKey string
+	// Only prompt for an auth key if tailscale isn't already up; otherwise it's a needless
+	// user interaction (and a chance to paste the wrong key).
+	if s := opts.tsStatusFn(ctx); s == nil || s.BackendState != "Running" || s.Self.DNSName == "" {
+		k, err := promptAuthKey(opts, inputReader)
+		if err != nil {
+			return err
+		}
+		authKey = k
+	} else {
+		fmt.Fprintf(out, "     already up as %s\n", strings.TrimSuffix(s.Self.DNSName, "."))
 	}
 	if err := opts.ensureTSUp(ctx, authKey); err != nil {
 		return fmt.Errorf("tailscale up: %w", err)
@@ -130,7 +147,7 @@ func RemoteSetup(ctx context.Context, opts RemoteSetupOpts) error {
 
 	// [3/6] Generate config (PSK, WS port, tailnet host).
 	fmt.Fprintln(out, "[3/6] Generating daemon config…")
-	cfg, err := generateConfig(ctx)
+	cfg, err := generateConfig(ctx, opts.tsMagicDNSFn)
 	if err != nil {
 		return err
 	}
@@ -235,7 +252,7 @@ type daemonConfig struct {
 	tailscaleHost string
 }
 
-func generateConfig(ctx context.Context) (*daemonConfig, error) {
+func generateConfig(ctx context.Context, magicDNS func(ctx context.Context) string) (*daemonConfig, error) {
 	if err := os.MkdirAll(paths.ConfigDir(), 0o700); err != nil {
 		return nil, err
 	}
@@ -270,9 +287,9 @@ func generateConfig(ctx context.Context) (*daemonConfig, error) {
 	}
 
 	// Get Tailscale MagicDNS name from running tailscale.
-	host, err := getTailscaleHost(ctx)
-	if err != nil {
-		return nil, err
+	host := magicDNS(ctx)
+	if host == "" {
+		return nil, fmt.Errorf("tailscale MagicDNS name not available — is `tailscale up` complete?")
 	}
 
 	if err := db.SetServerConfig(&statestore.ServerConfig{
@@ -298,30 +315,6 @@ func pickFreePort() (int, error) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 	return port, nil
-}
-
-// getTailscaleHost shells out to `tailscale status --json` for the MagicDNS name.
-func getTailscaleHost(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "tailscale", "status", "--json")
-	var out strings.Builder
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("tailscale MagicDNS name not available — is `tailscale up` complete?: %w", err)
-	}
-	// Quick substring scan rather than a full JSON unmarshal to avoid the tailscale import cycle.
-	s := out.String()
-	const key = `"DNSName":"`
-	idx := strings.Index(s, key)
-	if idx < 0 {
-		return "", fmt.Errorf("tailscale MagicDNS name not available — is `tailscale up` complete?")
-	}
-	rest := s[idx+len(key):]
-	end := strings.IndexByte(rest, '"')
-	if end < 0 {
-		return "", fmt.Errorf("tailscale MagicDNS name parse error")
-	}
-	host := strings.TrimSuffix(rest[:end], ".")
-	return host, nil
 }
 
 func requireAttachedPhone(ctx context.Context, devices func(context.Context) ([]adbDevice, error)) (adbDevice, error) {
@@ -502,15 +495,9 @@ func defaultEnsureTSInstalled(ctx context.Context, platform string) error {
 }
 
 func defaultEnsureTSUp(ctx context.Context, key string) error {
-	// Check if already up.
-	cmd := exec.CommandContext(ctx, "tailscale", "status", "--json")
-	var out strings.Builder
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		s := out.String()
-		if strings.Contains(s, `"BackendState":"Running"`) && strings.Contains(s, `"DNSName":"`) {
-			return nil
-		}
+	// Already up? The status has to report Running AND a MagicDNS name.
+	if s := tailscale.GetStatus(ctx); s != nil && s.BackendState == "Running" && s.Self.DNSName != "" {
+		return nil
 	}
 	if key == "" {
 		return fmt.Errorf("no tailscale auth key provided")

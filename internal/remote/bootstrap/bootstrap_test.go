@@ -14,6 +14,7 @@ import (
 	"github.com/premex-ab/adb-connect/internal/remote/daemon/paths"
 	"github.com/premex-ab/adb-connect/internal/remote/daemon/statestore"
 	"github.com/premex-ab/adb-connect/internal/remote/service"
+	"github.com/premex-ab/adb-connect/internal/tailscale"
 	"github.com/premex-ab/adb-connect/internal/testutil"
 )
 
@@ -21,11 +22,25 @@ import (
 
 func noopTSInstalled(_ context.Context, _ string) error { return nil }
 func noopTSUp(_ context.Context, _ string) error        { return nil }
-func noopInstall(_ context.Context, _ string) error     { return nil }
-func noopGrant(_ context.Context, _ string) error       { return nil }
-func noopGradle(_ context.Context, _ string) error      { return nil }
-func noopAPKDownload(_, _ string) error                 { return nil }
-func noopServiceInstall(_ service.InstallOpts) error    { return nil }
+
+// fakeTSStatusNotRunning returns nil so RemoteSetup takes the auth-key prompt path.
+// Most tests use this because their Input reader queues up an auth-key line first.
+func fakeTSStatusNotRunning(_ context.Context) *tailscale.Status { return nil }
+
+// fakeTSStatusRunning simulates tailscale already up; RemoteSetup skips the auth-key prompt.
+func fakeTSStatusRunning(_ context.Context) *tailscale.Status {
+	s := &tailscale.Status{BackendState: "Running"}
+	s.Self.DNSName = "test-host.ts.net."
+	return s
+}
+
+// fakeTSMagicDNS returns a deterministic MagicDNS host for generateConfig.
+func fakeTSMagicDNS(_ context.Context) string        { return "test-host.ts.net" }
+func noopInstall(_ context.Context, _ string) error  { return nil }
+func noopGrant(_ context.Context, _ string) error    { return nil }
+func noopGradle(_ context.Context, _ string) error   { return nil }
+func noopAPKDownload(_, _ string) error              { return nil }
+func noopServiceInstall(_ service.InstallOpts) error { return nil }
 
 func onePhone(_ context.Context) ([]adbDevice, error) {
 	return []adbDevice{{Serial: "emulator-5554", State: "device"}}, nil
@@ -126,6 +141,8 @@ func TestRemoteSetup_Success_APKDownload(t *testing.T) {
 			return nil
 		},
 		ensureTSInstalled: noopTSInstalled,
+		tsStatusFn:        fakeTSStatusNotRunning,
+		tsMagicDNSFn:      fakeTSMagicDNS,
 		ensureTSUp:        noopTSUp,
 		adbDevicesFn:      onePhone,
 		adbInstallFn:      noopInstall,
@@ -213,6 +230,8 @@ func TestRemoteSetup_Success_SourceBuild(t *testing.T) {
 		Input:             strings.NewReader("tskey-auth-fake\nmypixel\n"),
 		Output:            &strings.Builder{},
 		ensureTSInstalled: noopTSInstalled,
+		tsStatusFn:        fakeTSStatusNotRunning,
+		tsMagicDNSFn:      fakeTSMagicDNS,
 		ensureTSUp:        noopTSUp,
 		adbDevicesFn:      onePhone,
 		adbInstallFn:      noopInstall,
@@ -258,6 +277,8 @@ func TestRemoteSetup_NoPhone(t *testing.T) {
 		Input:             strings.NewReader("tskey-auth-fake\n"),
 		Output:            &strings.Builder{},
 		ensureTSInstalled: noopTSInstalled,
+		tsStatusFn:        fakeTSStatusNotRunning,
+		tsMagicDNSFn:      fakeTSMagicDNS,
 		ensureTSUp:        noopTSUp,
 		adbDevicesFn:      noPhones,
 		adbInstallFn:      noopInstall,
@@ -294,6 +315,8 @@ func TestRemoteSetup_MultiplePhones(t *testing.T) {
 		Input:             strings.NewReader("tskey-auth-fake\n"),
 		Output:            &strings.Builder{},
 		ensureTSInstalled: noopTSInstalled,
+		tsStatusFn:        fakeTSStatusNotRunning,
+		tsMagicDNSFn:      fakeTSMagicDNS,
 		ensureTSUp:        noopTSUp,
 		adbDevicesFn:      fakeTwoPhones,
 		adbInstallFn:      noopInstall,
@@ -331,6 +354,8 @@ func TestRemoteSetup_InvalidNickname(t *testing.T) {
 		Input:             strings.NewReader("tskey-auth-fake\nUPPER.invalid\n"),
 		Output:            &strings.Builder{},
 		ensureTSInstalled: noopTSInstalled,
+		tsStatusFn:        fakeTSStatusNotRunning,
+		tsMagicDNSFn:      fakeTSMagicDNS,
 		ensureTSUp:        noopTSUp,
 		adbDevicesFn:      onePhone,
 		adbInstallFn:      noopInstall,
