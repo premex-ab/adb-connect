@@ -22,6 +22,7 @@ const launchdLabel = "se.premex.adb-connect-watch"
 // launchdPlistTemplate is the macOS launchd user-agent plist. Placeholders:
 //   - {{BINARY}} — absolute path to the adb-connect binary
 //   - {{HOME}}   — user's home directory
+//   - {{PATH}}   — PATH env to give the daemon (must include the dir containing `adb`)
 const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -31,7 +32,7 @@ const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <array><string>{{BINARY}}</string><string>watch</string></array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>{{PATH}}</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -41,8 +42,31 @@ const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
-// systemdUnitTemplate is the Linux systemd-user unit. Placeholder:
+// buildDaemonPath returns the PATH to bake into the launchd plist. It starts
+// from a known-safe set of system+Homebrew dirs and prepends the directory
+// containing `adb` (discovered at install time when the user's own shell PATH
+// is live). adb typically lives at $HOME/Library/Android/sdk/platform-tools
+// (Android Studio install) or /opt/homebrew/bin (brew cask), and the common
+// default launchd PATH misses the Android Studio one.
+func buildDaemonPath() string {
+	base := "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+	adbPath, err := exec.LookPath("adb")
+	if err != nil {
+		return base
+	}
+	adbDir := filepath.Dir(adbPath)
+	// Avoid duplicating if it's already covered.
+	for _, p := range strings.Split(base, ":") {
+		if p == adbDir {
+			return base
+		}
+	}
+	return adbDir + ":" + base
+}
+
+// systemdUnitTemplate is the Linux systemd-user unit. Placeholders:
 //   - {{BINARY}} — absolute path to the adb-connect binary
+//   - {{PATH}}   — PATH env (must include the dir containing `adb`)
 const systemdUnitTemplate = `[Unit]
 Description=adb-connect mDNS auto-connect watcher
 After=network-online.target
@@ -51,6 +75,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart={{BINARY}} watch
+Environment=PATH={{PATH}}
 Restart=always
 RestartSec=3
 
@@ -125,6 +150,7 @@ func installLaunchd(binary, home string) error {
 
 	content := strings.ReplaceAll(launchdPlistTemplate, "{{BINARY}}", binary)
 	content = strings.ReplaceAll(content, "{{HOME}}", home)
+	content = strings.ReplaceAll(content, "{{PATH}}", buildDaemonPath())
 
 	plistPath := launchdPlistPath(home)
 	if err := os.WriteFile(plistPath, []byte(content), 0o644); err != nil {
@@ -164,6 +190,7 @@ func installSystemd(binary, home string) error {
 	}
 
 	content := strings.ReplaceAll(systemdUnitTemplate, "{{BINARY}}", binary)
+	content = strings.ReplaceAll(content, "{{PATH}}", buildDaemonPath())
 
 	unitPath := systemdUnitPath(home)
 	if err := os.WriteFile(unitPath, []byte(content), 0o644); err != nil {
