@@ -95,9 +95,10 @@ brews:
     commit_author:
       name: premex-release-bot
       email: bot@premex.se
-    dependencies:
-      - name: android-platform-tools
-        type: optional
+    # No `depends_on` — adb-connect uses `adb` but we assume it's already on the user's
+    # machine (via Android Studio, `brew install --cask android-platform-tools`, distro
+    # package, etc). The formerly-declared `android-platform-tools` formula has been
+    # retired from Homebrew core and declaring it broke `brew install`.
     install: |
       bin.install "adb-connect"
     test: |
