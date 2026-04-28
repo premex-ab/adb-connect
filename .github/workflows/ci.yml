@@ -33,7 +33,7 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         if: steps.has-go.outputs.present == 'true'
         with:
           go-version: '1.22'
